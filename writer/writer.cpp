@@ -2,77 +2,102 @@
 
 #include <common.h>
 
+
+#if 0
+
+//#include <boost/interprocess/managed_shared_memory.hpp>
+//#include <boost/interprocess/smart_ptr/shared_ptr.hpp>
+//#include <boost/interprocess/smart_ptr/deleter.hpp>
+//#include <boost/interprocess/allocators/allocator.hpp>
+#include <iostream>
+
+int main() {
+    // 공유 메모리 생성
+    bi::shared_memory_object::remove(SharedMemName);
+    bi::managed_shared_memory segment(bi::create_only, SharedMemName, 65536);
+
+    // Allocator와 deleter 설정
+    //typedef bi::allocator<MyType, bi::managed_shared_memory::segment_manager> MyAllocator;
+    //typedef bi::deleter<MyType, bi::managed_shared_memory::segment_manager> MyDeleter;
+
+    //MyAllocator alloc_inst(segment.get_segment_manager());
+
+    // shared_ptr 생성
+    bi::shared_ptr<MyType, MyAllocator, MyDeleter> MySharedPtr(
+        segment.construct<MyType>("MyTypeInstance")(42)
+        , MyAllocator( segment.get_segment_manager() )
+        , MyDeleter( segment.get_segment_manager() )
+    );
+
+    // 포인터 저장 (이름 등록)
+    segment.construct<bi::shared_ptr<MyType, MyAllocator, MyDeleter>>(SharedPtrName)(MySharedPtr);
+
+    use_count(&segment);
+
+    segment.destroy<MyType>("MyTypeInstance");
+    bi::shared_memory_object::remove(SharedMemName);
+}
+
+#else
+
+
 void write();
 int main()
 {
     write();
-
-    std::cout << "Hello World!\n";
 }
 
-#include <boost/interprocess/managed_shared_memory.hpp>
-#include <boost/interprocess/smart_ptr/shared_ptr.hpp> // 올바른 헤더 경로
-#include <boost/interprocess/sync/named_mutex.hpp>
 #include <iostream>
 #include <string>
-#include <memory> // std::unique_ptr (선택 사항, 로컬 사용용)
-
-// 이 할당자는 managed_shared_memory의 세그먼트 관리자를 사용합니다.
-using namespace boost::interprocess;
-typedef managed_shared_memory::segment_manager segment_manager_type;
-typedef allocator<void, segment_manager_type> void_allocator_type;
-typedef deleter<MyType, segment_manager_type> deleter_type;
-typedef shared_ptr<MyType, void_allocator_type, deleter_type> my_shared_ptr;
+#include <memory>
 
 void write() {
-    boost::interprocess::shared_memory_object::remove(ShmName);
-    boost::interprocess::named_mutex::remove(MutexName);
+    bi::shared_memory_object::remove(SharedMemName);
 
     try {
-        // 공유 메모리 세그먼트 생성 (크기 65536 바이트)
-        // managed_shared_memory는 공유 메모리 내에서 객체 생성을 관리합니다.
-        managed_shared_memory segment(create_only, ShmName, 65536);
-        std::cout << "공유 메모리 세그먼트 '" << ShmName << "' 생성됨." << std::endl;
+        bi::managed_shared_memory segment(bi::create_only, SharedMemName, 65536);
+        std::cout << "공유 메모리 세그먼트 '" << SharedMemName << "' 생성됨." << std::endl;
 
-#if 0
-        my_shared_ptr &shared_ptr_instance = *segment.contruct<my_shared_ptr>("Shared ptr")
-          (
-            segment.contruct<MyType>("Object to shared")()
-            , void_allocator_type( segment.get_sement_manager() )
-            , deleter_type( segment.get_segment_manager() )
-          );
-#endif
-        MyType* shared_my_data = segment.construct<MyType>("MyType")(200);
-        std::cout << "공유 메모리에 int 값 " << shared_my_data->data_ << " 생성됨." << std::endl;
+        MyType* my_data_ptr = segment.construct<MyType>("MyType")(300);
 
-        my_shared_ptr* shared_ptr_instance = 
-            segment.construct<my_shared_ptr>(SharedPtrName)(
-                shared_my_data
-                , void_allocator_type( segment.get_segment_manager() )
-                , deleter_type( segment.get_segment_manager() )
+        #if 0
+        auto custom_deleter = [&](int* p) {
+            std::cout << "Deleter가 호출되어 공유 메모리에서 int 객체를 파괴합니다." << std::endl;
+            segment.destroy_ptr(p); // segment_manager를 통해 객체를 파괴합니다.
+        };
+        #endif
+
+        MySharedPtr* my_shared_ptr = 
+            segment.construct<MySharedPtr>(SharedPtrName)(
+                my_data_ptr
+                , MyAllocator( segment.get_segment_manager() )
+                , MyDeleter( segment.get_segment_manager() )
             );
 
-        // 소비자에게 공유 메모리가 준비되었음을 알리기 위한 named_mutex 생성
-        // create_only 플래그는 뮤텍스가 존재하지 않을 때만 생성하도록 합니다.
-        boost::interprocess::named_mutex mutex(boost::interprocess::create_only, MutexName);
-        std::cout << "Named Mutex '" << MutexName << "' 생성됨." << std::endl;
+        std::cout << "Use count : " << my_shared_ptr->use_count() << std::endl;
 
-        std::cout << "소비자 애플리케이션이 공유 메모리에 접근할 수 있도록 대기 중..." << std::endl;
-        std::cout << "아무 키나 누르면 종료됩니다." << std::endl;
-        std::cin.get(); // 사용자가 키를 누를 때까지 대기
+        // 사용자 실행 후
+        std::cout << "Use count : " << my_shared_ptr->use_count() << std::endl;
+
+        my_shared_ptr->reset();
+
+        std::cout << "Use count : " << my_shared_ptr->use_count() << std::endl;
 
         std::cout << "생산자 애플리케이션 종료 중..." << std::endl;
-    } catch (const boost::interprocess::interprocess_exception& ex) {
+    } catch (const bi::interprocess_exception& ex) {
         std::cerr << "오류 발생: " << ex.what() << std::endl;
         std::cerr << "이전 실행에서 공유 메모리 또는 뮤텍스가 제대로 정리되지 않았을 수 있습니다. 수동으로 제거하거나 재시도하십시오." << std::endl;
     }
 
     // 공유 메모리 세그먼트와 뮤텍스 제거 (생산자가 종료될 때 정리)
     // 일반적으로 공유 메모리 세그먼트를 생성한 프로세스가 이를 제거합니다.
-    boost::interprocess::shared_memory_object::remove(ShmName);
-    boost::interprocess::named_mutex::remove(MutexName);
+    bi::shared_memory_object::remove(SharedMemName);
     std::cout << "공유 메모리 세그먼트와 뮤텍스 제거됨." << std::endl;
 }
+
+#endif
+
+
 
 #if 0
 #include <boost/interprocess/managed_shared_memory.hpp>

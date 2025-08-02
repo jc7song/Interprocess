@@ -10,38 +10,32 @@ int main()
     std::cout << "Hello World!\n";
 }
 
-#include <boost/interprocess/managed_shared_memory.hpp>
-#include <boost/interprocess/smart_ptr/shared_ptr.hpp> // 올바른 헤더 경로
-#include <boost/interprocess/sync/named_mutex.hpp>
 #include <iostream>
 #include <string>
 #include <memory> // std::unique_ptr (선택 사항, 로컬 사용용)
 
-// 이 할당자는 managed_shared_memory의 세그먼트 관리자를 사용합니다.
-using namespace boost::interprocess;
-typedef managed_shared_memory::segment_manager segment_manager_type;
-typedef allocator<void, segment_manager_type> void_allocator_type;
-typedef deleter<MyType, segment_manager_type> deleter_type;
-typedef shared_ptr<MyType, void_allocator_type, deleter_type> my_shared_ptr;
-
 void read() {
     try {
-        // 공유 메모리 세그먼트 생성 (크기 65536 바이트)
-        // managed_shared_memory는 공유 메모리 내에서 객체 생성을 관리합니다.
-        managed_shared_memory segment(open_only, ShmName);
-        std::cout << "공유 메모리 세그먼트 '" << ShmName << "' 열림." << std::endl;
+        bi::managed_shared_memory segment(bi::open_only, SharedMemName);
+        std::cout << "공유 메모리 세그먼트 '" << SharedMemName << "' 열림." << std::endl;
 
-        std::pair<my_shared_ptr*, std::size_t> res = segment.find<my_shared_ptr>(SharedPtrName);;
+        MySharedPtr* my_shared_ptr = segment.find<MySharedPtr>(SharedPtrName).first;
 
-        if (!res.first) {
-            std::cerr << "오류: 공유 메모리에서 shared_ptr를 찾을 수 없습니다. 생산자가 실행 중이고 shared_ptr를 생성했는지 확인하세요." << std::endl;
+        if (!my_shared_ptr) {
+            std::cerr << "오류: 공유 메모리에서 shared_ptr를 찾을 수 없습니다." << std::endl;
             return;
         }
 
-        my_shared_ptr my_shared = *(res.first);
+        MySharedPtr my_data = *my_shared_ptr;
+
+        std::cout << "data : " << my_data->data_ << std::endl;
+        std::cout << "Use count : " << my_shared_ptr->use_count() << std::endl;
+        std::cout << "소비자 애플리케이션 종료 중..." << std::endl;
+#if 0
+        MySharedPtr my_shared = *(my_shared_ptr);
         std::cout << "data : " << my_shared->data_ << std::endl;
         std::cout << "Use count : " << my_shared.use_count() << std::endl;
-
+#endif
 
     } catch (const boost::interprocess::interprocess_exception& ex) {
         std::cerr << "오류 발생: " << ex.what() << std::endl;
